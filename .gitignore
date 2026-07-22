@@ -2,6 +2,5 @@
 serviceAccountKey.json
 hdbServiceAccountKey.json
 *serviceAccount*.json
-*firebase-adminsdk*.json
 node_modules/
 *.log
