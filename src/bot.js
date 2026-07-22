@@ -30,7 +30,9 @@ function barisKeuangan(k) {
 
 // ========================= UMUM =========================
 bot.start((ctx) =>
-  ctx.reply("Halo! Aku bot manajemen keuangan & barang HDB 🧾\nKetik /help buat liat semua perintah.")
+  ctx.reply(
+    "Halo! Aku bot manajemen keuangan & barang HDB 🧾\nKetik /help buat liat semua perintah.",
+  ),
 );
 
 bot.command("myid", (ctx) => ctx.reply(`ID Telegram kamu: ${ctx.from.id}`));
@@ -57,14 +59,15 @@ bot.help((ctx) =>
       "/transaksi <kata> — cari transaksi\n" +
       "/invoice <nomor nota> — detail invoice\n" +
       "/tanggal <YYYY-MM-DD> — transaksi per tanggal\n\n" +
-      "Atau ketik bebas, misal: \"catat pemasukan 500rb servis AC\" atau \"cek stok freon\"."
-  )
+      'Atau ketik bebas, misal: "catat pemasukan 500rb servis AC" atau "cek stok freon".',
+  ),
 );
 
 // ========================= BARANG =========================
 bot.command("barang", async (ctx) => {
   const kata = ctx.message.text.split(" ").slice(1).join(" ");
-  if (!kata) return ctx.reply("Ketik: /barang <kata kunci>\nContoh: /barang freon");
+  if (!kata)
+    return ctx.reply("Ketik: /barang <kata kunci>\nContoh: /barang freon");
 
   const hasil = await barangSvc.cariBarang(kata);
   if (hasil.length === 0) return ctx.reply("Barang ga ketemu.");
@@ -73,25 +76,34 @@ bot.command("barang", async (ctx) => {
 
 bot.command("stok_rendah", async (ctx) => {
   const hasil = await barangSvc.stokRendah();
-  if (hasil.length === 0) return ctx.reply("Aman, ga ada barang yang stoknya menipis. 👍");
-  ctx.reply("⚠️ Barang stok menipis:\n\n" + hasil.map(barisBarang).join("\n\n"));
+  if (hasil.length === 0)
+    return ctx.reply("Aman, ga ada barang yang stoknya menipis. 👍");
+  ctx.reply(
+    "⚠️ Barang stok menipis:\n\n" + hasil.map(barisBarang).join("\n\n"),
+  );
 });
 
 // tambah barang dipandu (multi-step sederhana pakai session in-memory)
 const sesiTambahBarang = {};
 bot.command("tambah_barang", (ctx) => {
   sesiTambahBarang[ctx.from.id] = { langkah: 0, data: {} };
-  ctx.reply("Tambah barang baru.\nKetik merek & model barang (contoh: Freon R32):\n\n(ketik /batal buat batal)");
+  ctx.reply(
+    "Tambah barang baru.\nKetik merek & model barang (contoh: Freon R32):\n\n(ketik /batal buat batal)",
+  );
 });
 
 bot.command("edit_barang", async (ctx) => {
   const [, id, field, ...sisa] = ctx.message.text.split(" ");
   const nilai = sisa.join(" ");
   if (!id || !field || !nilai) {
-    return ctx.reply("Ketik: /edit_barang <id> <field> <nilai>\nContoh: /edit_barang -Nabc123 harga 150000\n\nField: merek, model, kategori, harga, hargaBeli, stok, stokMinimal, satuan, keterangan");
+    return ctx.reply(
+      "Ketik: /edit_barang <id> <field> <nilai>\nContoh: /edit_barang -Nabc123 harga 150000\n\nField: merek, model, kategori, harga, hargaBeli, stok, stokMinimal, satuan, keterangan",
+    );
   }
 
-  const nilaiFix = ["harga", "hargaBeli", "stok", "stokMinimal"].includes(field) ? parseJumlah(nilai) : nilai;
+  const nilaiFix = ["harga", "hargaBeli", "stok", "stokMinimal"].includes(field)
+    ? parseJumlah(nilai)
+    : nilai;
   const hasil = await barangSvc.editBarang(id, { [field]: nilaiFix });
   if (!hasil) return ctx.reply("Barang dengan id itu ga ketemu.");
   ctx.reply("✅ Diupdate:\n\n" + barisBarang(hasil));
@@ -103,18 +115,21 @@ bot.command("hapus_barang", async (ctx) => {
 
   const hasil = await barangSvc.hapusBarang(id);
   if (!hasil) return ctx.reply("Barang dengan id itu ga ketemu.");
-  ctx.reply(`🗑️ Dihapus: ${hasil.merek} ${hasil.model}\n(masih tersimpan di arsip, bisa dibalikin manual kalau perlu)`);
+  ctx.reply(
+    `🗑️ Dihapus: ${hasil.merek} ${hasil.model}\n(masih tersimpan di arsip, bisa dibalikin manual kalau perlu)`,
+  );
 });
 
 // ========================= KEUANGAN =========================
 bot.command("keuangan", async (ctx) => {
   const r = await keuanganSvc.rekapKeuangan();
-  if (r.jumlahTransaksi === 0) return ctx.reply("Belum ada data keuangan bulan ini.");
+  if (r.jumlahTransaksi === 0)
+    return ctx.reply("Belum ada data keuangan bulan ini.");
   ctx.reply(
     `💰 Rekap Keuangan Bulan Ini\n\n` +
       `Pemasukan: ${formatRupiah(r.totalPemasukan)}\n` +
       `Pengeluaran: ${formatRupiah(r.totalPengeluaran)}\n` +
-      `Saldo bersih: ${formatRupiah(r.saldoBersih)}\n\n(${r.jumlahTransaksi} transaksi)`
+      `Saldo bersih: ${formatRupiah(r.saldoBersih)}\n\n(${r.jumlahTransaksi} transaksi)`,
   );
 });
 
@@ -122,39 +137,63 @@ bot.command("masuk", async (ctx) => {
   const teks = ctx.message.text.split(" ").slice(1);
   const jumlah = parseJumlah(teks[0]);
   const keterangan = teks.slice(1).join(" ");
-  if (!jumlah) return ctx.reply("Ketik: /masuk <jumlah> <keterangan>\nContoh: /masuk 500rb servis AC pak budi");
+  if (!jumlah)
+    return ctx.reply(
+      "Ketik: /masuk <jumlah> <keterangan>\nContoh: /masuk 500rb servis AC pak budi",
+    );
 
-  const h = await keuanganSvc.catatKeuangan({ jenis: "pemasukan", jumlah, keterangan });
-  ctx.reply(`✅ Pemasukan: ${formatRupiah(h.jumlah)}\n${h.keterangan}\nid: ${h.id}`);
+  const h = await keuanganSvc.catatKeuangan({
+    jenis: "pemasukan",
+    jumlah,
+    keterangan,
+  });
+  ctx.reply(
+    `✅ Pemasukan: ${formatRupiah(h.jumlah)}\n${h.keterangan}\nid: ${h.id}`,
+  );
 });
 
 bot.command("keluar", async (ctx) => {
   const teks = ctx.message.text.split(" ").slice(1);
   const jumlah = parseJumlah(teks[0]);
   const keterangan = teks.slice(1).join(" ");
-  if (!jumlah) return ctx.reply("Ketik: /keluar <jumlah> <keterangan>\nContoh: /keluar 30rb bensin");
+  if (!jumlah)
+    return ctx.reply(
+      "Ketik: /keluar <jumlah> <keterangan>\nContoh: /keluar 30rb bensin",
+    );
 
-  const h = await keuanganSvc.catatKeuangan({ jenis: "pengeluaran", jumlah, keterangan });
-  ctx.reply(`✅ Pengeluaran: ${formatRupiah(h.jumlah)}\n${h.keterangan}\nid: ${h.id}`);
+  const h = await keuanganSvc.catatKeuangan({
+    jenis: "pengeluaran",
+    jumlah,
+    keterangan,
+  });
+  ctx.reply(
+    `✅ Pengeluaran: ${formatRupiah(h.jumlah)}\n${h.keterangan}\nid: ${h.id}`,
+  );
 });
 
 bot.command("pemasukan", async (ctx) => {
   const daftar = await keuanganSvc.riwayatKeuangan("pemasukan");
   if (daftar.length === 0) return ctx.reply("Belum ada pemasukan.");
-  ctx.reply("💵 10 Pemasukan Terakhir:\n\n" + daftar.map(barisKeuangan).join("\n\n"));
+  ctx.reply(
+    "💵 10 Pemasukan Terakhir:\n\n" + daftar.map(barisKeuangan).join("\n\n"),
+  );
 });
 
 bot.command("pengeluaran", async (ctx) => {
   const daftar = await keuanganSvc.riwayatKeuangan("pengeluaran");
   if (daftar.length === 0) return ctx.reply("Belum ada pengeluaran.");
-  ctx.reply("💸 10 Pengeluaran Terakhir:\n\n" + daftar.map(barisKeuangan).join("\n\n"));
+  ctx.reply(
+    "💸 10 Pengeluaran Terakhir:\n\n" + daftar.map(barisKeuangan).join("\n\n"),
+  );
 });
 
 bot.command("edit_keuangan", async (ctx) => {
   const [, id, field, ...sisa] = ctx.message.text.split(" ");
   const nilai = sisa.join(" ");
   if (!id || !field || !nilai) {
-    return ctx.reply("Ketik: /edit_keuangan <id> <field> <nilai>\nField: jenis, jumlah, kategori, keterangan, tanggal");
+    return ctx.reply(
+      "Ketik: /edit_keuangan <id> <field> <nilai>\nField: jenis, jumlah, kategori, keterangan, tanggal",
+    );
   }
   const nilaiFix = field === "jumlah" ? parseJumlah(nilai) : nilai;
   const hasil = await keuanganSvc.editKeuangan(id, { [field]: nilaiFix });
@@ -162,26 +201,49 @@ bot.command("edit_keuangan", async (ctx) => {
   ctx.reply("✅ Diupdate:\n\n" + barisKeuangan(hasil));
 });
 
-bot.command("hapus_keuangan", async (ctx) => {
-  const id = ctx.message.text.split(" ")[1];
-  if (!id) return ctx.reply("Ketik: /hapus_keuangan <id>");
+// simpan pilihan sementara per user
+const sesiHapusKeuangan = {};
 
-  const hasil = await keuanganSvc.hapusKeuangan(id);
-  if (!hasil) return ctx.reply("Data dengan id itu ga ketemu.");
-  ctx.reply(`🗑️ Dihapus: ${formatRupiah(hasil.jumlah)} (${hasil.keterangan})\n(masih di arsip, bisa dibalikin)`);
+bot.command("hapus_keuangan", async (ctx) => {
+  const daftar = await keuanganSvc.riwayatKeuangan(null, 10);
+  if (daftar.length === 0) return ctx.reply("Belum ada data keuangan.");
+
+  sesiHapusKeuangan[ctx.from.id] = daftar;
+
+  const pesan = daftar
+    .map((k, i) => {
+      const tanda = k.jenis === "pemasukan" ? "🟢" : "🔴";
+      return `${i + 1}. ${tanda} ${dayjs(k.tanggal).format("DD MMM")} — ${formatRupiah(k.jumlah)} (${k.keterangan || k.kategori})`;
+    })
+    .join("\n");
+
+  ctx.reply(
+    `Mau hapus yang mana? Balas angkanya (1-${daftar.length}):\n\n${pesan}\n\n(ketik /batal buat batal)`,
+  );
 });
 
 bot.command("grafik", async (ctx) => {
   const r = await keuanganSvc.rekapKeuangan();
-  if (r.jumlahTransaksi === 0) return ctx.reply("Belum ada data keuangan bulan ini.");
+  if (r.jumlahTransaksi === 0)
+    return ctx.reply("Belum ada data keuangan bulan ini.");
 
   const konfig = {
     type: "bar",
     data: {
       labels: ["Pemasukan", "Pengeluaran"],
-      datasets: [{ label: "Rupiah", data: [r.totalPemasukan, r.totalPengeluaran], backgroundColor: ["#2ecc71", "#e74c3c"] }],
+      datasets: [
+        {
+          label: "Rupiah",
+          data: [r.totalPemasukan, r.totalPengeluaran],
+          backgroundColor: ["#2ecc71", "#e74c3c"],
+        },
+      ],
     },
-    options: { plugins: { title: { display: true, text: "Pemasukan vs Pengeluaran Bulan Ini" } } },
+    options: {
+      plugins: {
+        title: { display: true, text: "Pemasukan vs Pengeluaran Bulan Ini" },
+      },
+    },
   };
   const url = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(konfig))}`;
   await ctx.replyWithPhoto(url);
@@ -196,8 +258,11 @@ bot.command("transaksi", async (ctx) => {
   if (hasil.length === 0) return ctx.reply("Transaksi ga ketemu.");
   ctx.reply(
     hasil
-      .map((t) => `${dayjs(t.tanggal).format("DD MMM YYYY")} — ${t.nomorNota || "-"}\nPelanggan: ${t.pelanggan || "-"}\nTotal: ${formatRupiah(t.total)}`)
-      .join("\n\n")
+      .map(
+        (t) =>
+          `${dayjs(t.tanggal).format("DD MMM YYYY")} — ${t.nomorNota || "-"}\nPelanggan: ${t.pelanggan || "-"}\nTotal: ${formatRupiah(t.total)}`,
+      )
+      .join("\n\n"),
   );
 });
 
@@ -209,10 +274,13 @@ bot.command("invoice", async (ctx) => {
   if (!t) return ctx.reply("Nota ga ketemu.");
 
   const items = (t.items || [])
-    .map((it) => `- ${it.barang?.merek || ""} ${it.barang?.model || ""} x${it.jumlah} @ ${formatRupiah(it.barang?.harga || 0)}`)
+    .map(
+      (it) =>
+        `- ${it.barang?.merek || ""} ${it.barang?.model || ""} x${it.jumlah} @ ${formatRupiah(it.barang?.harga || 0)}`,
+    )
     .join("\n");
   ctx.reply(
-    `🧾 ${t.nomorNota}\n${dayjs(t.tanggal).format("DD MMM YYYY, HH:mm")}\nPelanggan: ${t.pelanggan || "-"}\n\n${items}\n\nTotal: ${formatRupiah(t.total)}\nBayar: ${formatRupiah(t.bayar)}\nKembali: ${formatRupiah(t.kembali)}`
+    `🧾 ${t.nomorNota}\n${dayjs(t.tanggal).format("DD MMM YYYY, HH:mm")}\nPelanggan: ${t.pelanggan || "-"}\n\n${items}\n\nTotal: ${formatRupiah(t.total)}\nBayar: ${formatRupiah(t.bayar)}\nKembali: ${formatRupiah(t.kembali)}`,
   );
 });
 
@@ -226,20 +294,41 @@ bot.command("tanggal", async (ctx) => {
   const total = daftar.reduce((s, t) => s + (t.total || 0), 0);
   ctx.reply(
     `📅 Transaksi ${tgl} (${daftar.length} nota)\n\n` +
-      daftar.map((t) => `${t.nomorNota || "-"} — ${formatRupiah(t.total)} (${t.pelanggan || "-"})`).join("\n") +
-      `\n\nTotal: ${formatRupiah(total)}`
+      daftar
+        .map(
+          (t) =>
+            `${t.nomorNota || "-"} — ${formatRupiah(t.total)} (${t.pelanggan || "-"})`,
+        )
+        .join("\n") +
+      `\n\nTotal: ${formatRupiah(total)}`,
   );
 });
 
 bot.command("batal", (ctx) => {
   delete sesiTambahBarang[ctx.from.id];
+  delete sesiHapusKeuangan[ctx.from.id];
   ctx.reply("Dibatalin.");
 });
 
 // ========================= NATURAL LANGUAGE =========================
 bot.on("text", async (ctx) => {
   const teks = ctx.message.text;
+
   if (teks.startsWith("/")) return;
+  // Lagi milih mau hapus keuangan yang mana?
+  const daftarHapus = sesiHapusKeuangan[ctx.from.id];
+  if (daftarHapus) {
+    const nomor = parseInt(teks);
+    if (isNaN(nomor) || nomor < 1 || nomor > daftarHapus.length) {
+      return ctx.reply(`Balas angka 1-${daftarHapus.length} aja, atau /batal.`);
+    }
+    const target = daftarHapus[nomor - 1];
+    delete sesiHapusKeuangan[ctx.from.id];
+    const hasil = await keuanganSvc.hapusKeuangan(target.id);
+    return ctx.reply(
+      `🗑️ Dihapus: ${formatRupiah(hasil.jumlah)} (${hasil.keterangan})\n(masih di arsip, bisa dibalikin)`,
+    );
+  }
 
   // Lagi di tengah alur tambah barang?
   const sesi = sesiTambahBarang[ctx.from.id];
@@ -250,14 +339,26 @@ bot.on("text", async (ctx) => {
 
   switch (aksi) {
     case "tambah_keuangan": {
-      if (!data.jumlah || !data.jenis) return ctx.reply("Kurang jelas jumlah/jenisnya. Contoh: \"catat pemasukan 500rb servis AC\".");
-      const h = await keuanganSvc.catatKeuangan({ jenis: data.jenis, jumlah: parseJumlah(data.jumlah), keterangan: data.keterangan });
-      return ctx.reply(`✅ ${h.jenis === "pemasukan" ? "Pemasukan" : "Pengeluaran"}: ${formatRupiah(h.jumlah)}\n${h.keterangan}\nid: ${h.id}`);
+      if (!data.jumlah || !data.jenis)
+        return ctx.reply(
+          'Kurang jelas jumlah/jenisnya. Contoh: "catat pemasukan 500rb servis AC".',
+        );
+      const h = await keuanganSvc.catatKeuangan({
+        jenis: data.jenis,
+        jumlah: parseJumlah(data.jumlah),
+        keterangan: data.keterangan,
+      });
+      return ctx.reply(
+        `✅ ${h.jenis === "pemasukan" ? "Pemasukan" : "Pengeluaran"}: ${formatRupiah(h.jumlah)}\n${h.keterangan}\nid: ${h.id}`,
+      );
     }
     case "rekap_keuangan": {
       const r = await keuanganSvc.rekapKeuangan();
-      if (r.jumlahTransaksi === 0) return ctx.reply("Belum ada data keuangan bulan ini.");
-      return ctx.reply(`💰 Bulan ini:\nPemasukan ${formatRupiah(r.totalPemasukan)}\nPengeluaran ${formatRupiah(r.totalPengeluaran)}\nSaldo ${formatRupiah(r.saldoBersih)}`);
+      if (r.jumlahTransaksi === 0)
+        return ctx.reply("Belum ada data keuangan bulan ini.");
+      return ctx.reply(
+        `💰 Bulan ini:\nPemasukan ${formatRupiah(r.totalPemasukan)}\nPengeluaran ${formatRupiah(r.totalPengeluaran)}\nSaldo ${formatRupiah(r.saldoBersih)}`,
+      );
     }
     case "riwayat_keuangan": {
       const daftar = await keuanganSvc.riwayatKeuangan(data.jenis || null);
@@ -276,15 +377,26 @@ bot.on("text", async (ctx) => {
     case "stok_rendah": {
       const hasil = await barangSvc.stokRendah();
       if (hasil.length === 0) return ctx.reply("Aman, ga ada stok menipis. 👍");
-      return ctx.reply("⚠️ Stok menipis:\n\n" + hasil.map(barisBarang).join("\n\n"));
+      return ctx.reply(
+        "⚠️ Stok menipis:\n\n" + hasil.map(barisBarang).join("\n\n"),
+      );
     }
     case "cari_transaksi": {
       const hasil = await transaksiSvc.cariTransaksi(data.kataKunci || "");
       if (hasil.length === 0) return ctx.reply("Transaksi ga ketemu.");
-      return ctx.reply(hasil.map((t) => `${dayjs(t.tanggal).format("DD MMM YYYY")} — ${t.nomorNota || "-"} (${formatRupiah(t.total)})`).join("\n"));
+      return ctx.reply(
+        hasil
+          .map(
+            (t) =>
+              `${dayjs(t.tanggal).format("DD MMM YYYY")} — ${t.nomorNota || "-"} (${formatRupiah(t.total)})`,
+          )
+          .join("\n"),
+      );
     }
     default:
-      return ctx.reply("Maaf, kurang paham. Ketik /help buat liat perintah, atau coba lebih spesifik ya.");
+      return ctx.reply(
+        "Maaf, kurang paham. Ketik /help buat liat perintah, atau coba lebih spesifik ya.",
+      );
   }
 });
 
@@ -321,7 +433,8 @@ async function lanjutTambahBarang(ctx, sesi, teks) {
 // ========================= LAUNCH =========================
 bot.catch((err, ctx) => {
   console.error("Error:", err.message);
-  if (ctx && ctx.reply) ctx.reply("Lagi ada gangguan, coba lagi ya 🙏").catch(() => {});
+  if (ctx && ctx.reply)
+    ctx.reply("Lagi ada gangguan, coba lagi ya 🙏").catch(() => {});
 });
 
 bot.launch();
