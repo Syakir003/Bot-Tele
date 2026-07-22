@@ -222,6 +222,27 @@ bot.command("hapus_keuangan", async (ctx) => {
   );
 });
 
+const sesiRestoreKeuangan = {};
+
+bot.command("restore_keuangan", async (ctx) => {
+  const daftar = await keuanganSvc.ambilArsipKeuangan();
+  if (daftar.length === 0)
+    return ctx.reply("Arsip kosong, ga ada yang bisa dibalikin.");
+
+  sesiRestoreKeuangan[ctx.from.id] = daftar;
+
+  const pesan = daftar
+    .map((k, i) => {
+      const tanda = k.jenis === "pemasukan" ? "🟢" : "🔴";
+      return `${i + 1}. ${tanda} ${formatRupiah(k.jumlah)} (${k.keterangan || k.kategori}) — dihapus ${dayjs(k.dihapusPada).format("DD MMM HH:mm")}`;
+    })
+    .join("\n");
+
+  ctx.reply(
+    `Mau balikin yang mana? Balas angkanya (1-${daftar.length}):\n\n${pesan}\n\n(ketik /batal buat batal)`,
+  );
+});
+
 bot.command("grafik", async (ctx) => {
   const r = await keuanganSvc.rekapKeuangan();
   if (r.jumlahTransaksi === 0)
@@ -307,12 +328,28 @@ bot.command("tanggal", async (ctx) => {
 bot.command("batal", (ctx) => {
   delete sesiTambahBarang[ctx.from.id];
   delete sesiHapusKeuangan[ctx.from.id];
+  delete sesiRestoreKeuangan[ctx.from.id];
   ctx.reply("Dibatalin.");
 });
 
 // ========================= NATURAL LANGUAGE =========================
 bot.on("text", async (ctx) => {
   const teks = ctx.message.text;
+  const daftarRestore = sesiRestoreKeuangan[ctx.from.id];
+  if (daftarRestore) {
+    const nomor = parseInt(teks);
+    if (isNaN(nomor) || nomor < 1 || nomor > daftarRestore.length) {
+      return ctx.reply(
+        `Balas angka 1-${daftarRestore.length} aja, atau /batal.`,
+      );
+    }
+    const target = daftarRestore[nomor - 1];
+    delete sesiRestoreKeuangan[ctx.from.id];
+    const hasil = await keuanganSvc.restoreKeuangan(target.id);
+    return ctx.reply(
+      `♻️ Dibalikin: ${formatRupiah(hasil.jumlah)} (${hasil.keterangan})`,
+    );
+  }
 
   if (teks.startsWith("/")) return;
   // Lagi milih mau hapus keuangan yang mana?

@@ -12,10 +12,12 @@ async function rekapKeuangan({ bulanIni = true } = {}) {
   let jumlahTransaksi = 0;
 
   for (const item of Object.values(semua)) {
-    if (bulanIni && dayjs(item.tanggal).format("YYYY-MM") !== bulanSekarang) continue;
+    if (bulanIni && dayjs(item.tanggal).format("YYYY-MM") !== bulanSekarang)
+      continue;
     jumlahTransaksi++;
     if (item.jenis === "pemasukan") totalPemasukan += Number(item.jumlah) || 0;
-    else if (item.jenis === "pengeluaran") totalPengeluaran += Number(item.jumlah) || 0;
+    else if (item.jenis === "pengeluaran")
+      totalPengeluaran += Number(item.jumlah) || 0;
   }
 
   return {
@@ -64,7 +66,13 @@ async function editKeuangan(id, perubahan) {
   const data = await ambilKeuanganById(id);
   if (!data) return null;
 
-  const fieldDiizinkan = ["jenis", "jumlah", "kategori", "keterangan", "tanggal"];
+  const fieldDiizinkan = [
+    "jenis",
+    "jumlah",
+    "kategori",
+    "keterangan",
+    "tanggal",
+  ];
   const update = {};
   for (const [key, val] of Object.entries(perubahan)) {
     if (fieldDiizinkan.includes(key)) {
@@ -81,9 +89,31 @@ async function hapusKeuangan(id) {
   const data = await ambilKeuanganById(id);
   if (!data) return null;
 
-  await db.ref(`keuangan_terhapus/${id}`).set({ ...data, dihapusPada: dayjs().format() });
+  await db
+    .ref(`keuangan_terhapus/${id}`)
+    .set({ ...data, dihapusPada: dayjs().format() });
   await db.ref(`keuangan/${id}`).remove();
   return data;
+}
+
+async function ambilArsipKeuangan(jumlahData = 10) {
+  const snapshot = await db.ref("keuangan_terhapus").once("value");
+  const semua = snapshot.val() || {};
+  return Object.entries(semua)
+    .map(([id, item]) => ({ id, ...item }))
+    .sort((a, b) => new Date(b.dihapusPada) - new Date(a.dihapusPada))
+    .slice(0, jumlahData);
+}
+
+async function restoreKeuangan(id) {
+  const snapshot = await db.ref(`keuangan_terhapus/${id}`).once("value");
+  const data = snapshot.val();
+  if (!data) return null;
+
+  delete data.dihapusPada;
+  await db.ref(`keuangan/${id}`).set(data);
+  await db.ref(`keuangan_terhapus/${id}`).remove();
+  return { id, ...data };
 }
 
 module.exports = {
@@ -93,4 +123,6 @@ module.exports = {
   catatKeuangan,
   editKeuangan,
   hapusKeuangan,
+  ambilArsipKeuangan,
+  restoreKeuangan,
 };
