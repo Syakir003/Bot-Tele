@@ -41,6 +41,10 @@ function barisKeuangan(k) {
   return `${tandaJenis(k.jenis)} ${dayjs(k.tanggal).format("DD MMM")} — *${formatRupiah(k.jumlah)}*\n${k.keterangan || k.kategori}`;
 }
 
+function barisTransaksiSingkat(t) {
+  return `🧾 ${t.nomorNota || "-"} — ${formatRupiah(t.total)}\n${dayjs(t.tanggal).format("DD MMM YYYY")} • ${t.pelanggan || "-"}`;
+}
+
 // menu utama
 function menuUtama() {
   return Markup.inlineKeyboard([
@@ -67,6 +71,15 @@ function menuBarang() {
   ]);
 }
 
+function menuTransaksi() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("📋 Transaksi Terbaru", "aksi:transaksi_terbaru")],
+    [Markup.button.callback("🔍 Cari Transaksi", "input:cari_transaksi")],
+    [Markup.button.callback("📅 Cari per Tanggal", "input:tanggal_transaksi")],
+    [Markup.button.callback("« Kembali", "menu:utama")],
+  ]);
+}
+
 // tombol edit/hapus untuk 1 item keuangan
 function tombolItemKeuangan(id) {
   return Markup.inlineKeyboard([
@@ -78,6 +91,10 @@ function tombolItemBarang(id) {
   return Markup.inlineKeyboard([
     [Markup.button.callback("✏️ Edit", `editb:${id}`), Markup.button.callback("🗑️ Hapus", `hapusb:${id}`)],
   ]);
+}
+
+function tombolLihatDetail(id) {
+  return Markup.inlineKeyboard([[Markup.button.callback("🔍 Lihat Detail", `detailinv:${id}`)]]);
 }
 
 // ==================== START / HELP ====================
@@ -112,10 +129,7 @@ bot.action("menu:barang", async (ctx) => {
 });
 bot.action("menu:transaksi", async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.editMessageText("🧾 Untuk transaksi, ketik:\n\n`/transaksi <nama/nota>`\n`/invoice <nomor nota>`\n`/tanggal <YYYY-MM-DD>`", {
-    parse_mode: "Markdown",
-    ...Markup.inlineKeyboard([[Markup.button.callback("« Kembali", "menu:utama")]]),
-  });
+  await ctx.editMessageText("🧾 *Menu Transaksi*", { parse_mode: "Markdown", ...menuTransaksi() });
 });
 
 // ==================== CALLBACK: AKSI LANGSUNG ====================
@@ -151,6 +165,12 @@ bot.action("aksi:stok_rendah", async (ctx) => {
   }
 });
 
+bot.action("aksi:transaksi_terbaru", async (ctx) => {
+  await ctx.answerCbQuery();
+  const daftar = await transaksiSvc.transaksiTerbaru(10);
+  await tampilkanDaftarTransaksi(ctx, daftar);
+});
+
 // ==================== CALLBACK: MINTA INPUT ====================
 bot.action("input:masuk", async (ctx) => {
   await ctx.answerCbQuery();
@@ -167,11 +187,29 @@ bot.action("input:cari_barang", async (ctx) => {
   getSesi(ctx.from.id).menunggu = "cari_barang";
   ctx.reply("Ketik nama barang yang ingin dicari:");
 });
+bot.action("input:cari_transaksi", async (ctx) => {
+  await ctx.answerCbQuery();
+  getSesi(ctx.from.id).menunggu = "cari_transaksi";
+  ctx.reply("Ketik nama pelanggan, nomor nota, atau nama barang:");
+});
+bot.action("input:tanggal_transaksi", async (ctx) => {
+  await ctx.answerCbQuery();
+  getSesi(ctx.from.id).menunggu = "tanggal_transaksi";
+  ctx.reply("Ketik tanggalnya, format: *YYYY-MM-DD*\nContoh: 2026-07-01", { parse_mode: "Markdown" });
+});
 bot.action("input:tambah_barang", async (ctx) => {
   await ctx.answerCbQuery();
   const s = getSesi(ctx.from.id);
   s.tambahBarang = { langkah: 0, data: {} };
   ctx.reply("Tambah barang baru.\nKetik *merek & model* barang (contoh: Freon R32):", { parse_mode: "Markdown" });
+});
+
+// ==================== CALLBACK: LIHAT DETAIL INVOICE ====================
+bot.action(/^detailinv:(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const t = await transaksiSvc.ambilInvoiceById(ctx.match[1]);
+  if (!t) return ctx.reply("Transaksi tidak ditemukan.");
+  await ctx.reply(teksInvoiceLengkap(t), { parse_mode: "Markdown" });
 });
 
 // ==================== CALLBACK: HAPUS (dengan konfirmasi) ====================
@@ -260,29 +298,25 @@ bot.action(/^fb:(\w+):(.+)$/, async (ctx) => {
   ctx.reply(`Ketik nilai baru untuk *${field}*:`, { parse_mode: "Markdown" });
 });
 
-// ==================== COMMAND TRANSAKSI (read only) ====================
+// ==================== COMMAND TRANSAKSI (read only, tetap didukung) ====================
 bot.command("transaksi", async (ctx) => {
   const kata = ctx.message.text.split(" ").slice(1).join(" ");
   if (!kata) return ctx.reply("Ketik: /transaksi <pelanggan/nota/barang>");
   const hasil = await transaksiSvc.cariTransaksi(kata);
-  if (hasil.length === 0) return ctx.reply("Transaksi tidak ditemukan.");
-  ctx.reply(hasil.map((t) => `${dayjs(t.tanggal).format("DD MMM YYYY")} — ${t.nomorNota || "-"}\n${t.pelanggan || "-"} • ${formatRupiah(t.total)}`).join("\n\n"));
+  await tampilkanDaftarTransaksi(ctx, hasil);
 });
 bot.command("invoice", async (ctx) => {
   const nota = ctx.message.text.split(" ").slice(1).join(" ");
   if (!nota) return ctx.reply("Ketik: /invoice <nomor nota>");
   const t = await transaksiSvc.ambilInvoice(nota);
   if (!t) return ctx.reply("Nota tidak ditemukan.");
-  const items = (t.items || []).map((it) => `- ${it.barang?.merek || ""} ${it.barang?.model || ""} x${it.jumlah} @ ${formatRupiah(it.barang?.harga || 0)}`).join("\n");
-  ctx.reply(`🧾 ${t.nomorNota}\n${dayjs(t.tanggal).format("DD MMM YYYY, HH:mm")}\nPelanggan: ${t.pelanggan || "-"}\n\n${items}\n\nTotal: ${formatRupiah(t.total)}\nBayar: ${formatRupiah(t.bayar)}\nKembali: ${formatRupiah(t.kembali)}`);
+  await ctx.reply(teksInvoiceLengkap(t), { parse_mode: "Markdown" });
 });
 bot.command("tanggal", async (ctx) => {
   const tgl = ctx.message.text.split(" ")[1];
   if (!tgl) return ctx.reply("Ketik: /tanggal <YYYY-MM-DD>");
   const daftar = await transaksiSvc.transaksiByTanggal(tgl);
-  if (daftar.length === 0) return ctx.reply(`Tidak ada transaksi tanggal ${tgl}.`);
-  const total = daftar.reduce((s, t) => s + (t.total || 0), 0);
-  ctx.reply(`📅 Transaksi ${tgl} (${daftar.length} nota)\n\n` + daftar.map((t) => `${t.nomorNota || "-"} — ${formatRupiah(t.total)} (${t.pelanggan || "-"})`).join("\n") + `\n\nTotal: ${formatRupiah(total)}`);
+  await tampilkanDaftarTransaksi(ctx, daftar);
 });
 
 // ==================== HELPER PENGIRIM ====================
@@ -313,6 +347,30 @@ async function tampilkanHasilBarang(ctx, hasil) {
   }
 }
 
+// List transaksi: tiap item dikirim sebagai pesan terpisah + tombol "Lihat Detail"
+async function tampilkanDaftarTransaksi(ctx, daftar) {
+  if (!daftar || daftar.length === 0) return ctx.reply("Transaksi tidak ditemukan.");
+  await ctx.reply(`Ditemukan ${daftar.length} transaksi:`);
+  for (const t of daftar) {
+    await ctx.reply(barisTransaksiSingkat(t), { ...tombolLihatDetail(t.id) });
+  }
+}
+
+function teksInvoiceLengkap(t) {
+  const items = (t.items || [])
+    .map((it) => `• ${it.barang?.merek || ""} ${it.barang?.model || ""} x${it.jumlah} @ ${formatRupiah(it.barang?.harga || 0)}`)
+    .join("\n");
+  return (
+    `🧾 *${t.nomorNota || "-"}*\n` +
+    `${dayjs(t.tanggal).format("DD MMM YYYY, HH:mm")}\n` +
+    `Pelanggan: ${t.pelanggan || "-"}\n\n` +
+    `${items || "(tidak ada item tercatat)"}\n\n` +
+    `Total: *${formatRupiah(t.total)}*\n` +
+    `Bayar: ${formatRupiah(t.bayar)}\n` +
+    `Kembali: ${formatRupiah(t.kembali)}`
+  );
+}
+
 // ==================== TEXT HANDLER (sesi + natural language) ====================
 bot.on("text", async (ctx) => {
   const teks = ctx.message.text;
@@ -335,6 +393,18 @@ bot.on("text", async (ctx) => {
     resetSesi(ctx.from.id);
     const hasil = await barangSvc.cariBarang(teks);
     return tampilkanHasilBarang(ctx, hasil);
+  }
+
+  if (s.menunggu === "cari_transaksi") {
+    resetSesi(ctx.from.id);
+    const hasil = await transaksiSvc.cariTransaksi(teks);
+    return tampilkanDaftarTransaksi(ctx, hasil);
+  }
+
+  if (s.menunggu === "tanggal_transaksi") {
+    resetSesi(ctx.from.id);
+    const hasil = await transaksiSvc.transaksiByTanggal(teks.trim());
+    return tampilkanDaftarTransaksi(ctx, hasil);
   }
 
   if (s.menunggu === "nilai_edit_keuangan") {
@@ -393,8 +463,7 @@ bot.on("text", async (ctx) => {
     }
     case "cari_transaksi": {
       const hasil = await transaksiSvc.cariTransaksi(data.kataKunci || "");
-      if (hasil.length === 0) return ctx.reply("Transaksi tidak ditemukan.");
-      return ctx.reply(hasil.map((t) => `${dayjs(t.tanggal).format("DD MMM YYYY")} — ${t.nomorNota || "-"} (${formatRupiah(t.total)})`).join("\n"));
+      return tampilkanDaftarTransaksi(ctx, hasil);
     }
     default:
       return ctx.reply("Maaf, saya belum paham maksudnya. 🙏 Coba lebih spesifik, atau pakai menu di bawah.", menuUtama());
@@ -402,7 +471,6 @@ bot.on("text", async (ctx) => {
 });
 
 async function lanjutTambahBarang(ctx, alur, teks) {
-  const s = getSesi(ctx.from.id);
   if (alur.langkah === 0) {
     const [merek, ...model] = teks.split(" ");
     alur.data.merek = merek;
