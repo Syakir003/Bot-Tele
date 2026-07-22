@@ -1,18 +1,23 @@
 const admin = require("firebase-admin");
+const fs = require("fs");
 
 function initFirebase() {
   if (admin.apps.length > 0) {
     return admin.database();
   }
 
-  const jsonMentah = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!jsonMentah) {
+  let kredensial;
+
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+    const isiFile = fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_PATH, "utf8");
+    kredensial = JSON.parse(isiFile);
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    kredensial = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  } else {
     throw new Error(
-      "FIREBASE_SERVICE_ACCOUNT_JSON belum diisi di file .env"
+      "Isi salah satu: FIREBASE_SERVICE_ACCOUNT_PATH atau FIREBASE_SERVICE_ACCOUNT_JSON di .env"
     );
   }
-
-  const kredensial = JSON.parse(jsonMentah);
 
   admin.initializeApp({
     credential: admin.credential.cert(kredensial),
