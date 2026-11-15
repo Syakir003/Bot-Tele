@@ -2,7 +2,7 @@
 
 Tanggal: 2026-11-14
 Branch: `claude/bot-tuning-hna5wf`
-Status: draft, menunggu review
+Status: **sudah diimplementasi** (lihat bagian "Deviasi dari spec" di bawah)
 
 ## 1. Tujuan
 
@@ -221,7 +221,7 @@ pesan user
 
 ### 7.4 Grafik
 
-`kirimGrafik` tidak boleh lagi mengirim data ke `quickchart.io`. Default: render lokal dengan `chartjs-node-canvas`. **Keputusan terbuka:** bila user lebih memilih tombol Grafik dihapus, itu juga diterima (lihat §10).
+`kirimGrafik` tidak boleh lagi mengirim data ke `quickchart.io`. (Diimplementasi sebagai batang teks di pesan rekap, lihat "Deviasi dari spec".)
 
 ## 8. Strategi pengujian
 
@@ -267,5 +267,17 @@ Tiap tahap bisa di-commit dan dites mandiri:
 | Pencarian substring bisa lambat pada data besar | Pencarian memakai `_teks` yang sudah di-lowercase di RAM; ribuan record tetap < 1 ms. Diukur di smoke test |
 | Data diubah langsung di Firebase Console dengan tipe salah (mis. `stok` string) | Normalisasi saat masuk cache (§4.1) |
 | `tanggal` transaksi dari app HDB bertipe campuran | Normalisasi ke angka ms saat masuk cache; item yang tidak bisa dinormalisasi di-log dan di-skip dari urutan |
-| **Terbuka:** ganti grafik ke render lokal atau hapus tombol Grafik? | Default render lokal; `chartjs-node-canvas` butuh dependensi native (`canvas`) yang perlu dicek bisa di-install di VPS |
-| **Terbuka:** pertanyaan teknis AC umum ditolak | Sudah diputuskan: ditolak (§5.2). Ubah di sini bila ingin lain |
+| ~~Terbuka:~~ grafik | Selesai: batang teks, tanpa dependensi native (lihat "Deviasi dari spec") |
+| ~~Terbuka:~~ pertanyaan teknis AC umum ditolak | Sudah diputuskan: ditolak (§5.2). Ubah di `nlu/gemini.js` (INSTRUKSI) bila ingin lain |
+
+## Deviasi dari spec (yang benar-benar dibangun)
+
+Keputusan yang diambil saat implementasi, demi "tinggal `git pull` + restart" tanpa dependensi/env baru:
+
+1. **Grafik** = batang teks (`█`) di pesan rekap, bukan `chartjs-node-canvas`. Tidak ada paket native baru dan tidak ada data yang keluar dari server. Tombol "📊 Grafik" membuka rekap yang sama.
+2. **Tambah barang**: harga beli, stok minimal, dan satuan tidak ditanya satu-satu. Kartu konfirmasi memakai default (0, 0, `pcs`) dan ketiganya bisa diisi lewat `[✏️ Ubah]`. Lebih sedikit pertanyaan, hasil akhirnya sama.
+3. **Struktur modul** sedikit lebih ringkas dari §3: `app.js` (handler) + `bot.js` (entry), `data/normalisasi.js` dan `data/arsip.js` ditambahkan, `interaksi/langkah.js` dilebur ke router `LANGKAH` di `app.js`.
+4. **Firebase**: `FIREBASE_SERVICE_ACCOUNT_PATH` tetap jalur utama (sesuai VPS dan `.env.example`); `FIREBASE_SERVICE_ACCOUNT_JSON` opsional.
+5. **Aksi NLU tambahan**: `transaksi_tanggal` ("transaksi kemarin"), `transaksi_terbaru`, `sapa`, selain `di_luar_hdb`/`tidak_jelas`. Pesan saat Gemini mati memakai aksi internal `layanan_terbatas`.
+6. **Edit data tersimpan** juga lewat kartu konfirmasi (lama -> baru), sesuai bagian 1.
+7. Ditemukan dan diperbaiki saat tes: kategori "Lainnya" (barang tanpa kategori) tidak bisa dibuka dari daftar kategori.

@@ -46,7 +46,7 @@ const hitungKategori = () => {
 const hitungMerek = (kategoriFilter) => {
   const hitung = {};
   for (const b of repo.barang.semua()) {
-    if (kategoriFilter && b.kategori.toLowerCase() !== kategoriFilter.toLowerCase()) continue;
+    if (kategoriFilter && (b.kategori || "Lainnya").toLowerCase() !== kategoriFilter.toLowerCase()) continue;
     const m = b.merek || "Lainnya";
     hitung[m] = (hitung[m] || 0) + 1;
   }
@@ -81,7 +81,8 @@ function barangByFilter({ kategori = null, merek = null } = {}, batas = 500) {
   return repo.barang
     .semua()
     .filter((b) => {
-      const cocokKategori = !kategori || b.kategori.toLowerCase() === kategori.toLowerCase();
+      // barang tanpa kategori ditampilkan sebagai "Lainnya" di daftar kategori, jadi filternya harus ikut
+      const cocokKategori = !kategori || (b.kategori || "Lainnya").toLowerCase() === kategori.toLowerCase();
       const cocokMerek = !merek || (b.merek || "Lainnya").toLowerCase() === merek.toLowerCase();
       return cocokKategori && cocokMerek;
     })

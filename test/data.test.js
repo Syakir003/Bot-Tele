@@ -114,6 +114,14 @@ test("barang: kategori & merek (merek kosong = Lainnya), filter", async () => {
   assert.deepEqual(barangSvc.barangByFilter({ merek: "Lainnya" }).map((b) => b.id), ["b3"]);
 });
 
+test("barang: kategori 'Lainnya' (barang tanpa kategori) bisa dibuka dari daftar kategori", async () => {
+  await siapkan({ barang: { a: { merek: "X", model: "1", kategori: "", harga: 1, stok: 1 }, b: { merek: "Y", model: "2", kategori: "AC", harga: 1, stok: 1 } } });
+  const lainnya = barangSvc.daftarKategori().find((k) => k.kategori === "Lainnya");
+  assert.equal(lainnya.jumlah, 1);
+  assert.deepEqual(barangSvc.barangByFilter({ kategori: "Lainnya" }).map((b) => b.id), ["a"]);
+  assert.deepEqual(barangSvc.daftarMerek("Lainnya"), [{ merek: "X", jumlah: 1 }]);
+});
+
 test("barang: tambah, edit, hapus, urungkan (round-trip ke DB)", async () => {
   const db = await siapkan();
   const baru = await barangSvc.tambahBarang({ merek: "Panasonic", model: "CS-PN5", kategori: "AC", harga: 3000000, stok: 4 });
