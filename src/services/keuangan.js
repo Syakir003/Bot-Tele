@@ -1,96 +1,127 @@
-const { db } = require("../config/firebase");
 const dayjs = require("dayjs");
+const { repo } = require("../data/repo");
+const { arsipkan, pulihkanDariArsip } = require("../data/arsip");
+const { normalisasiKeuangan } = require("../data/normalisasi");
+const { hariIni, rentangPeriode, parseTanggal } = require("../waktu");
+
+const JENIS = ["pemasukan", "pengeluaran"];
+const FIELD_DIIZINKAN = ["jenis", "jumlah", "kategori", "keterangan", "tanggal"];
+
+// Filter berdasarkan periode ("hari_ini" | "minggu_ini" | "bulan_ini" | "bulan_lalu" | "semua").
+// Record tanpa tanggal valid tidak ikut periode manapun kecuali "semua".
+function dalamPeriode(daftar, periode) {
+  const rentang = rentangPeriode(periode);
+  if (!rentang) return daftar;
+  return daftar.filter((k) => k.tanggal && k.tanggal >= rentang.dari && k.tanggal <= rentang.sampai);
+}
 
 // --- LIHAT / REKAP ---
-async function rekapKeuangan({ bulanIni = true } = {}) {
-  const snapshot = await db.ref("keuangan").once("value");
-  const semua = snapshot.val() || {};
-  const bulanSekarang = dayjs().format("YYYY-MM");
+function rekapKeuangan({ periode = "bulan_ini" } = {}) {
+  const daftar = dalamPeriode(repo.keuangan.semua(), periode);
 
   let totalPemasukan = 0;
   let totalPengeluaran = 0;
-  let jumlahTransaksi = 0;
-
-  for (const item of Object.values(semua)) {
-    if (bulanIni && dayjs(item.tanggal).format("YYYY-MM") !== bulanSekarang) continue;
-    jumlahTransaksi++;
-    if (item.jenis === "pemasukan") totalPemasukan += Number(item.jumlah) || 0;
-    else if (item.jenis === "pengeluaran") totalPengeluaran += Number(item.jumlah) || 0;
+  for (const k of daftar) {
+    if (k.jenis === "pemasukan") totalPemasukan += k.jumlah;
+    else if (k.jenis === "pengeluaran") totalPengeluaran += k.jumlah;
   }
 
   return {
+    periode,
     totalPemasukan,
     totalPengeluaran,
     saldoBersih: totalPemasukan - totalPengeluaran,
-    jumlahTransaksi,
+    jumlahTransaksi: daftar.length,
   };
 }
 
-async function riwayatKeuangan(jenisFilter = null, jumlahData = 10) {
-  const snapshot = await db.ref("keuangan").once("value");
-  const semua = snapshot.val() || {};
-
-  let daftar = Object.entries(semua).map(([id, item]) => ({ id, ...item }));
-  if (jenisFilter) daftar = daftar.filter((item) => item.jenis === jenisFilter);
-
-  return daftar
-    .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal))
-    .slice(0, jumlahData);
+// Terbaru dulu: tanggal, lalu waktu dibuat, lalu ID push (kronologis)
+function urutTerbaru(a, b) {
+  return (
+    b.tanggal.localeCompare(a.tanggal) ||
+    String(b.dibuatPada || "").localeCompare(String(a.dibuatPada || "")) ||
+    b.id.localeCompare(a.id)
+  );
 }
 
-async function ambilKeuanganById(id) {
-  const snapshot = await db.ref(`keuangan/${id}`).once("value");
-  const data = snapshot.val();
-  return data ? { id, ...data } : null;
+function riwayatKeuangan({ jenis = null, periode = "semua" } = {}) {
+  let daftar = dalamPeriode(repo.keuangan.semua(), periode);
+  if (jenis) daftar = daftar.filter((k) => k.jenis === jenis);
+  return [...daftar].sort(urutTerbaru);
+}
+
+function ambilKeuanganById(id) {
+  return repo.keuangan.ambil(id);
 }
 
 // --- TAMBAH ---
-async function catatKeuangan({ jenis, jumlah, kategori, keterangan }) {
-  const ref = db.ref("keuangan").push();
+async function catatKeuangan({ jenis, jumlah, kategori, keterangan, tanggal }) {
+  if (!JENIS.includes(jenis)) throw new Error("Jenis harus pemasukan atau pengeluaran");
+  const nominal = Number(jumlah);
+  if (!Number.isFinite(nominal) || nominal <= 0) throw new Error("Jumlah harus lebih dari 0");
+
+  const ref = repo.db.ref("keuangan").push();
   const data = {
-    jenis, // "pemasukan" | "pengeluaran"
-    jumlah: Number(jumlah) || 0,
-    kategori: kategori || "Umum",
-    keterangan: keterangan || "",
-    tanggal: dayjs().format("YYYY-MM-DD"),
+    jenis,
+    jumlah: Math.round(nominal),
+    kategori: String(kategori || "").trim() || "Umum",
+    keterangan: String(keterangan || "").trim(),
+    tanggal: tanggal || hariIni(),
     dibuatPada: dayjs().format(),
   };
   await ref.set(data);
-  return { id: ref.key, ...data };
+  return normalisasiKeuangan({ id: ref.key, ...data });
 }
 
 // --- EDIT ---
 async function editKeuangan(id, perubahan) {
-  const data = await ambilKeuanganById(id);
+  const data = ambilKeuanganById(id);
   if (!data) return null;
 
-  const fieldDiizinkan = ["jenis", "jumlah", "kategori", "keterangan", "tanggal"];
   const update = {};
   for (const [key, val] of Object.entries(perubahan)) {
-    if (fieldDiizinkan.includes(key)) {
-      update[key] = key === "jumlah" ? Number(val) : val;
+    if (!FIELD_DIIZINKAN.includes(key)) continue;
+    if (key === "jumlah") {
+      const n = Number(val);
+      if (!Number.isFinite(n) || n <= 0) throw new Error("Jumlah harus lebih dari 0");
+      update.jumlah = Math.round(n);
+    } else if (key === "jenis") {
+      if (!JENIS.includes(val)) throw new Error("Jenis harus pemasukan atau pengeluaran");
+      update.jenis = val;
+    } else if (key === "tanggal") {
+      const tgl = parseTanggal(val);
+      if (!tgl) throw new Error("Format tanggal tidak valid");
+      update.tanggal = tgl;
+    } else {
+      update[key] = String(val ?? "").trim();
     }
   }
+  if (Object.keys(update).length === 0) throw new Error("Tidak ada field yang bisa diubah");
 
-  await db.ref(`keuangan/${id}`).update(update);
-  return await ambilKeuanganById(id);
+  await repo.db.ref(`keuangan/${id}`).update(update);
+  return normalisasiKeuangan({ ...data, ...update });
 }
 
-// --- HAPUS (soft delete) ---
+// --- HAPUS (soft delete) & URUNGKAN ---
 async function hapusKeuangan(id) {
-  const data = await ambilKeuanganById(id);
+  const data = ambilKeuanganById(id);
   if (!data) return null;
+  const mentah = await arsipkan(repo.db, "keuangan", id);
+  return mentah ? data : null;
+}
 
-  await db.ref(`keuangan_terhapus/${id}`).set({ ...data, dihapusPada: dayjs().format() });
-  await db.ref(`keuangan/${id}`).remove();
-  return data;
+async function pulihkanKeuangan(id) {
+  const mentah = await pulihkanDariArsip(repo.db, "keuangan", id);
+  return mentah ? normalisasiKeuangan({ id, ...mentah }) : null;
 }
 
 module.exports = {
+  JENIS,
   rekapKeuangan,
   riwayatKeuangan,
   ambilKeuanganById,
   catatKeuangan,
   editKeuangan,
   hapusKeuangan,
+  pulihkanKeuangan,
 };
