@@ -1,58 +1,41 @@
-const { db } = require("../config/firebase");
-const dayjs = require("dayjs");
+const { repo } = require("../data/repo");
+const { tanggalDariMs } = require("../waktu");
 
-function withId(entries) {
-  return entries.map(([id, item]) => ({ id, ...item }));
+function kataKunci(teks) {
+  return String(teks || "").toLowerCase().split(/\s+/).filter(Boolean);
 }
 
-async function cariTransaksi(kataKunci, batas = 8) {
-  const snapshot = await db.ref("transaksi").once("value");
-  const semua = snapshot.val() || {};
-  const kunci = (kataKunci || "").toLowerCase();
+const terbaruDulu = (a, b) => b.tanggal - a.tanggal || b.id.localeCompare(a.id);
 
-  return withId(Object.entries(semua))
-    .filter((trx) => {
-      const pelanggan = (trx.pelanggan || "").toLowerCase();
-      const nota = (trx.nomorNota || "").toLowerCase();
-      const namaBarang = (trx.items || [])
-        .map((it) => `${it.barang?.merek || ""} ${it.barang?.model || ""}`)
-        .join(" ")
-        .toLowerCase();
-      return pelanggan.includes(kunci) || nota.includes(kunci) || namaBarang.includes(kunci);
-    })
-    .sort((a, b) => b.tanggal - a.tanggal)
+function semuaTerurut() {
+  return [...repo.transaksi.semua()].sort(terbaruDulu);
+}
+
+// Semua kata kunci harus ada di pelanggan / nomor nota / nama barang (urutan bebas)
+function cariTransaksi(teks, batas = 200) {
+  const kunci = kataKunci(teks);
+  return semuaTerurut()
+    .filter((t) => kunci.every((k) => t._teks.includes(k)))
     .slice(0, batas);
 }
 
-async function transaksiTerbaru(batas = 10) {
-  const snapshot = await db.ref("transaksi").once("value");
-  const semua = snapshot.val() || {};
-  return withId(Object.entries(semua))
-    .sort((a, b) => b.tanggal - a.tanggal)
-    .slice(0, batas);
+function transaksiTerbaru(batas = 15) {
+  return semuaTerurut().slice(0, batas);
 }
 
-async function ambilInvoiceById(id) {
-  const snapshot = await db.ref(`transaksi/${id}`).once("value");
-  const data = snapshot.val();
-  return data ? { id, ...data } : null;
+function ambilInvoiceById(id) {
+  return repo.transaksi.ambil(id);
 }
 
-async function ambilInvoice(nomorNota) {
-  const snapshot = await db.ref("transaksi").once("value");
-  const semua = snapshot.val() || {};
-  const hasil = withId(Object.entries(semua)).find(
-    (trx) => (trx.nomorNota || "").toLowerCase() === (nomorNota || "").toLowerCase()
-  );
-  return hasil || null;
+function ambilInvoice(nomorNota) {
+  const nota = String(nomorNota || "").trim().toLowerCase();
+  if (!nota) return null;
+  return repo.transaksi.semua().find((t) => t.nomorNota.toLowerCase() === nota) || null;
 }
 
-async function transaksiByTanggal(tanggalDicari) {
-  const snapshot = await db.ref("transaksi").once("value");
-  const semua = snapshot.val() || {};
-  return withId(Object.entries(semua))
-    .filter((trx) => dayjs(trx.tanggal).format("YYYY-MM-DD") === tanggalDicari)
-    .sort((a, b) => b.tanggal - a.tanggal);
+// tanggalDicari: "YYYY-MM-DD" (WIB)
+function transaksiByTanggal(tanggalDicari) {
+  return semuaTerurut().filter((t) => t.tanggal && tanggalDariMs(t.tanggal) === tanggalDicari);
 }
 
 module.exports = { cariTransaksi, transaksiTerbaru, ambilInvoice, ambilInvoiceById, transaksiByTanggal };

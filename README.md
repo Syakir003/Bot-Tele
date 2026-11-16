@@ -1,44 +1,70 @@
-# Kronik Bot
+# Bot HDB Airconds
 
-Bot Telegram pribadi: chat AI, pengingat, dan pencatat pengeluaran. Pake Gemini API (gratis) + Firebase Realtime Database.
+Bot Telegram pribadi buat ngurus **barang, keuangan, dan transaksi HDB Airconds**. Data dari Firebase Realtime Database, Gemini dipakai cuma buat nerjemahin kalimat jadi perintah.
 
-## Setup Lokal (opsional, kalau ada laptop/PC)
-
-```bash
-npm install
-cp .env.example .env
-# isi .env sesuai punya kamu
-npm start
-```
-
-## Isi File `.env`
-
-- `TELEGRAM_BOT_TOKEN` → dari @BotFather
-- `GEMINI_API_KEY` → dari aistudio.google.com
-- `FIREBASE_DATABASE_URL` → dari Firebase Console → Realtime Database
-- `FIREBASE_SERVICE_ACCOUNT_JSON` → buka file JSON service account, copy **semua isinya**, paste jadi satu baris
-- `OWNER_TELEGRAM_ID` → kosongin dulu, jalanin bot, kirim `/myid` ke bot-nya, baru isi ID yang muncul & restart
-
-## Cara Upload ke GitHub (dari HP, tanpa laptop)
-
-1. Buka github.com/Syakir003, bikin repo baru (misal `kronik-bot`), **jangan** centang "Add README"
-2. Di halaman repo kosong, klik **"uploading an existing file"**
-3. Upload semua file & folder di zip ini KECUALI folder `node_modules` (ga usah, karena `.gitignore` udah nge-skip itu, dan Railway install otomatis)
-4. Commit
-
-## Cara Deploy ke Railway (gratis, jalan 24/7)
-
-1. Daftar di railway.app pake akun GitHub
-2. New Project → Deploy from GitHub repo → pilih `kronik-bot`
-3. Masuk ke tab **Variables**, tambahin semua isi `.env` kamu satu-satu (nama variable harus sama persis kayak di `.env.example`)
-4. Railway otomatis build & jalanin `npm start`
-5. Selesai — bot online 24/7, tinggal chat dari Telegram di HP
+Bot ini **hanya** ngejawab urusan HDB. Pertanyaan di luar itu (termasuk tanya teknis AC umum) ditolak.
 
 ## Fitur
 
-- **Chat bebas** → langsung kejawab pake AI
-- **Catat pengeluaran** → ketik natural, contoh: "abis jajan 20rb", "makan siang 25000"
-- **Pengingat** → contoh: "ingetin aku bayar kos besok jam 9 pagi"
-- `/rekap` → total pengeluaran bulan ini per kategori
-- `/pengingat` → list pengingat yang masih aktif
-- `/myid` → cek ID Telegram kamu
+- **Menu tombol** (`/menu`): Keuangan, Barang, Transaksi.
+- **Ketik bebas**, contoh:
+  - `servis AC pak budi dapet 350rb` → catat pemasukan
+  - `bensin 30rb` → catat pengeluaran
+  - `cek stok freon`, `stok menipis`, `merek AC apa aja`
+  - `rekap bulan ini`, `hari ini masuk berapa aja`
+  - `nota pak andi`, `transaksi kemarin`
+- **Interaktif**: kalau info kurang, bot nanya balik pakai tombol. Semua yang nulis ke database (catat, tambah, edit) lewat **kartu konfirmasi** `[✅ Simpan] [✏️ Ubah] [❌ Batal]`.
+- **Hapus bisa diurungkan** (soft delete ke `*_terhapus`, ada tombol `↩️ Urungkan`).
+- List panjang ada halaman (`⬅️ 1/3 ➡️`), rekap bisa ganti periode (hari ini / minggu ini / bulan ini / bulan lalu / semua).
+- Command: `/start`, `/menu`, `/batal`, `/myid`, `/transaksi <kata>`, `/invoice <nota>`, `/tanggal <tgl>`, `/kategori`, `/merek`.
+
+## Env (`.env`)
+
+Lihat `.env.example`.
+
+| Variable | Keterangan |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | dari @BotFather |
+| `GEMINI_API_KEY` | dari aistudio.google.com |
+| `FIREBASE_DATABASE_URL` | URL Realtime Database HDB |
+| `FIREBASE_SERVICE_ACCOUNT_PATH` | path file JSON service account (jangan di-commit) |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | opsional: isi JSON satu baris, dipakai kalau terisi (menggantikan PATH) |
+| `OWNER_TELEGRAM_ID` | **wajib**. Kalau kosong bot terkunci dan cuma jawab `/myid` |
+| `GEMINI_MODEL` | opsional, default `gemini-flash-lite-latest` |
+
+Pertama kali: kosongin `OWNER_TELEGRAM_ID`, jalanin bot, kirim `/myid`, isi hasilnya ke `.env`, restart.
+
+## Jalanin & update di VPS
+
+```bash
+git pull
+npm install
+pm2 restart kronik-bot      # pertama kali: pm2 start src/bot.js --name kronik-bot
+pm2 logs kronik-bot
+```
+
+Pas start, bot narik data HDB sekali (log: `Data siap: N barang, ...`), setelah itu cuma nerima perubahan realtime, jadi tiap aksi cepat dan hemat bandwidth Firebase. Timezone dipaksa WIB (`Asia/Jakarta`) apa pun setting server.
+
+## Test
+
+```bash
+npm test
+```
+
+Tes pakai Firebase, Gemini, dan Telegram palsu (tanpa jaringan), termasuk tes end-to-end yang ngejalanin bot asli.
+
+## Struktur
+
+```
+src/
+  bot.js            # entry point (env, boot, launch)
+  app.js            # semua handler Telegram
+  waktu.js          # WIB, parse tanggal, periode
+  config/           # koneksi Firebase & Gemini
+  data/             # cache realtime + normalisasi + arsip (soft delete)
+  services/         # logika barang / keuangan / transaksi
+  nlu/              # fast-path regex, Gemini (JSON mode), validasi output
+  interaksi/        # sesi, draft + konfirmasi
+  tampilan/         # format pesan HTML, paginasi
+test/
+```

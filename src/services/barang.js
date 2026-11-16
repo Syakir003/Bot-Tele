@@ -1,78 +1,89 @@
-const { db } = require("../config/firebase");
 const dayjs = require("dayjs");
+const { repo } = require("../data/repo");
+const { arsipkan, pulihkanDariArsip } = require("../data/arsip");
+const { normalisasiBarang } = require("../data/normalisasi");
 
-// --- LIHAT / CARI ---
-async function cariBarang(kataKunci, batas = 8) {
-  const snapshot = await db.ref("barang").once("value");
-  const semua = snapshot.val() || {};
-  const kunci = (kataKunci || "").toLowerCase();
+const FIELD_DIIZINKAN = ["merek", "model", "kategori", "harga", "hargaBeli", "stok", "stokMinimal", "satuan", "barcode", "keterangan", "pk"];
+const FIELD_ANGKA = ["harga", "hargaBeli", "stok", "stokMinimal"];
 
-  return Object.entries(semua)
-    .map(([id, item]) => ({ id, ...item }))
-    .filter((item) => {
-      const teks = `${item.merek || ""} ${item.model || ""} ${item.kategori || ""} ${item.barcode || ""}`.toLowerCase();
-      return teks.includes(kunci);
-    })
+function kataKunci(teks) {
+  return String(teks || "").toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+// --- LIHAT / CARI (semua dari cache di memori) ---
+// Semua kata kunci harus ada (urutan bebas): "r32 freon" ketemu "Freon R32"
+function cariBarang(teks, batas = 200) {
+  const kunci = kataKunci(teks);
+  return repo.barang
+    .semua()
+    .filter((b) => kunci.every((k) => b._teks.includes(k)))
     .slice(0, batas);
 }
 
-async function ambilBarangById(id) {
-  const snapshot = await db.ref(`barang/${id}`).once("value");
-  const data = snapshot.val();
-  return data ? { id, ...data } : null;
+function ambilBarangById(id) {
+  return repo.barang.ambil(id);
 }
 
-async function stokRendah(batas = 20) {
-  const snapshot = await db.ref("barang").once("value");
-  const semua = snapshot.val() || {};
-
-  return Object.entries(semua)
-    .map(([id, item]) => ({ id, ...item }))
-    .filter((item) => Number(item.stok) <= (Number(item.stokMinimal) || 0))
+function stokRendah(batas = 200) {
+  return repo.barang
+    .semua()
+    .filter((b) => b.stok !== null && b.stok <= (b.stokMinimal || 0))
     .slice(0, batas);
 }
 
 // --- BROWSE BERTINGKAT: kategori -> merek -> list barang ---
-async function daftarKategori() {
-  const snapshot = await db.ref("barang").once("value");
-  const semua = snapshot.val() || {};
+const hitungKategori = () => {
   const hitung = {};
-
-  for (const item of Object.values(semua)) {
-    const k = (item.kategori || "Lainnya").trim();
+  for (const b of repo.barang.semua()) {
+    const k = b.kategori || "Lainnya";
     hitung[k] = (hitung[k] || 0) + 1;
   }
-
   return Object.entries(hitung)
     .map(([kategori, jumlah]) => ({ kategori, jumlah }))
     .sort((a, b) => b.jumlah - a.jumlah);
-}
+};
 
-async function daftarMerek(kategoriFilter = null) {
-  const snapshot = await db.ref("barang").once("value");
-  const semua = snapshot.val() || {};
+const hitungMerek = (kategoriFilter) => {
   const hitung = {};
-
-  for (const item of Object.values(semua)) {
-    if (kategoriFilter && (item.kategori || "").toLowerCase() !== kategoriFilter.toLowerCase()) continue;
-    const m = (item.merek || "Lainnya").trim() || "Lainnya";
+  for (const b of repo.barang.semua()) {
+    if (kategoriFilter && (b.kategori || "Lainnya").toLowerCase() !== kategoriFilter.toLowerCase()) continue;
+    const m = b.merek || "Lainnya";
     hitung[m] = (hitung[m] || 0) + 1;
   }
-
   return Object.entries(hitung)
     .map(([merek, jumlah]) => ({ merek, jumlah }))
     .sort((a, b) => b.jumlah - a.jumlah);
+};
+
+// memo dibuat lazy karena repo.barang baru ada setelah mulai()
+let memoKategori = null;
+let memoMerek = null;
+let cacheMemo = null;
+function pastikanMemo() {
+  if (cacheMemo !== repo.barang) {
+    memoKategori = repo.barang.memo(hitungKategori);
+    memoMerek = repo.barang.memo(hitungMerek);
+    cacheMemo = repo.barang;
+  }
 }
 
-async function barangByFilter({ kategori = null, merek = null } = {}, batas = 30) {
-  const snapshot = await db.ref("barang").once("value");
-  const semua = snapshot.val() || {};
+function daftarKategori() {
+  pastikanMemo();
+  return memoKategori();
+}
 
-  return Object.entries(semua)
-    .map(([id, item]) => ({ id, ...item }))
-    .filter((item) => {
-      const cocokKategori = !kategori || (item.kategori || "").toLowerCase() === kategori.toLowerCase();
-      const cocokMerek = !merek || (item.merek || "Lainnya").toLowerCase() === merek.toLowerCase();
+function daftarMerek(kategoriFilter = null) {
+  pastikanMemo();
+  return memoMerek(kategoriFilter || null);
+}
+
+function barangByFilter({ kategori = null, merek = null } = {}, batas = 500) {
+  return repo.barang
+    .semua()
+    .filter((b) => {
+      // barang tanpa kategori ditampilkan sebagai "Lainnya" di daftar kategori, jadi filternya harus ikut
+      const cocokKategori = !kategori || (b.kategori || "Lainnya").toLowerCase() === kategori.toLowerCase();
+      const cocokMerek = !merek || (b.merek || "Lainnya").toLowerCase() === merek.toLowerCase();
       return cocokKategori && cocokMerek;
     })
     .slice(0, batas);
@@ -80,49 +91,60 @@ async function barangByFilter({ kategori = null, merek = null } = {}, batas = 30
 
 // --- TAMBAH ---
 async function tambahBarang({ merek, model, kategori, harga, hargaBeli, stok, stokMinimal, satuan, barcode, keterangan }) {
-  const ref = db.ref("barang").push();
+  if (!String(merek || "").trim() && !String(model || "").trim()) {
+    throw new Error("Merek atau model barang wajib diisi");
+  }
+  const ref = repo.db.ref("barang").push();
   const data = {
-    merek: merek || "",
-    model: model || "",
-    kategori: kategori || "",
+    merek: String(merek || "").trim(),
+    model: String(model || "").trim(),
+    kategori: String(kategori || "").trim(),
     harga: Number(harga) || 0,
     hargaBeli: Number(hargaBeli) || 0,
     stok: Number(stok) || 0,
     stokMinimal: Number(stokMinimal) || 0,
-    satuan: satuan || "pcs",
+    satuan: String(satuan || "").trim() || "pcs",
     barcode: barcode || "",
     keterangan: keterangan || "",
     dibuatPada: dayjs().format(),
   };
   await ref.set(data);
-  return { id: ref.key, ...data };
+  return normalisasiBarang({ id: ref.key, ...data });
 }
 
 // --- EDIT ---
 async function editBarang(id, perubahan) {
-  const barang = await ambilBarangById(id);
+  const barang = ambilBarangById(id);
   if (!barang) return null;
 
-  const fieldDiizinkan = ["merek", "model", "kategori", "harga", "hargaBeli", "stok", "stokMinimal", "satuan", "barcode", "keterangan", "pk"];
   const update = {};
   for (const [key, val] of Object.entries(perubahan)) {
-    if (fieldDiizinkan.includes(key)) {
-      update[key] = ["harga", "hargaBeli", "stok", "stokMinimal"].includes(key) ? Number(val) : val;
+    if (!FIELD_DIIZINKAN.includes(key)) continue;
+    if (FIELD_ANGKA.includes(key)) {
+      const n = Number(val);
+      if (!Number.isFinite(n) || n < 0) throw new Error(`Nilai ${key} tidak valid`);
+      update[key] = n;
+    } else {
+      update[key] = String(val ?? "").trim();
     }
   }
+  if (Object.keys(update).length === 0) throw new Error("Tidak ada field yang bisa diubah");
 
-  await db.ref(`barang/${id}`).update(update);
-  return await ambilBarangById(id);
+  await repo.db.ref(`barang/${id}`).update(update);
+  return normalisasiBarang({ ...barang, ...update });
 }
 
-// --- HAPUS (soft delete) ---
+// --- HAPUS (soft delete) & URUNGKAN ---
 async function hapusBarang(id) {
-  const barang = await ambilBarangById(id);
+  const barang = ambilBarangById(id);
   if (!barang) return null;
+  const mentah = await arsipkan(repo.db, "barang", id);
+  return mentah ? barang : null;
+}
 
-  await db.ref(`barang_terhapus/${id}`).set({ ...barang, dihapusPada: dayjs().format() });
-  await db.ref(`barang/${id}`).remove();
-  return barang;
+async function pulihkanBarang(id) {
+  const mentah = await pulihkanDariArsip(repo.db, "barang", id);
+  return mentah ? normalisasiBarang({ id, ...mentah }) : null;
 }
 
 module.exports = {
@@ -135,4 +157,5 @@ module.exports = {
   tambahBarang,
   editBarang,
   hapusBarang,
+  pulihkanBarang,
 };

@@ -1,6 +1,21 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const klienGemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const modelUtama = klienGemini.getGenerativeModel({ model: "gemini-flash-lite-latest" });
+const MODEL_BAWAAN = "gemini-flash-lite-latest";
+let klien = null;
 
-module.exports = { modelUtama };
+// Model dibuat per panggilan (murah) supaya bisa ganti skema/instruksi tanpa state global.
+// temperature 0 + JSON mode: model cuma boleh ngeluarin JSON, bukan prosa.
+function buatModel({ instruksi, skema }) {
+  klien = klien || new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  return klien.getGenerativeModel({
+    model: process.env.GEMINI_MODEL || MODEL_BAWAAN,
+    systemInstruction: instruksi,
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: "application/json",
+      ...(skema ? { responseSchema: skema } : {}),
+    },
+  });
+}
+
+module.exports = { buatModel };
